@@ -30,9 +30,10 @@ import base64
 import io
 import logging
 import os
+import re
 from pathlib import Path
 
-from src.models.schemas import DocumentProfile, ExtractedDocument
+from src.models.schemas import BoundingBox, DocumentProfile, ExtractedDocument
 from src.strategies.base import BaseExtractor, ExtractionResult
 
 logger = logging.getLogger(__name__)
@@ -114,7 +115,11 @@ class VisionExtractor(BaseExtractor):
                 page_texts.append("")
 
         full_text = "\n\n".join(t for t in page_texts if t)
-        confidence = self._compute_confidence(full_text)
+        
+        # Spatial Provenance synthesis
+        bounding_boxes = self._synthesize_bboxes(page_texts)
+        
+        confidence = self._compute_enhanced_confidence(page_texts)
 
         doc = ExtractedDocument(
             document_id=profile.document_id,
@@ -123,6 +128,7 @@ class VisionExtractor(BaseExtractor):
             page_count=len(page_images) or (profile.page_count or 1),
             overall_confidence=confidence,
             warnings=warnings,
+            bounding_boxes=bounding_boxes,
         )
         return ExtractionResult(
             document=doc,
@@ -201,17 +207,59 @@ class VisionExtractor(BaseExtractor):
         return response.choices[0].message.content or ""
 
     # ------------------------------------------------------------------
-    # Confidence scoring
+    # Spatial Synthesis
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _compute_confidence(text: str) -> float:
+    def _synthesize_bboxes(page_texts: list[str]) -> dict[str, BoundingBox]:
+        """Produce approximate line-level bboxes for spatial consistency."""
+        boxes: dict[str, BoundingBox] = {}
+        for p_idx, text in enumerate(page_texts):
+            lines = [l for l in text.splitlines() if l.strip()]
+            if not lines: continue
+            lh = 1.0 / len(lines)
+            for l_idx, _ in enumerate(lines):
+                boxes[f"v-p{p_idx:03d}-l{l_idx:03d}"] = BoundingBox(x0=0, y0=l_idx*lh, x1=1, y1=(l_idx+1)*lh)
+        return boxes
+
+    # ------------------------------------------------------------------
+    # Enhanced Confidence & Refusal Detection
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _compute_enhanced_confidence(cls, page_texts: list[str]) -> float:
+        """
+        Aggregate confidence across pages, penalising refusals.
+        """
+        if not page_texts: return 0.0
+        
+        page_scores: list[float] = []
+        for text in page_texts:
+            if cls._is_refusal(text):
+                page_scores.append(0.0)
+            else:
+                page_scores.append(cls._compute_page_confidence(text))
+        
+        return round(sum(page_scores) / len(page_scores), 4)
+
+    @staticmethod
+    def _is_refusal(text: str) -> bool:
+        """Detect common LLM refusal patterns for vision tasks."""
+        refusal_patterns = [
+            r"i (cannot|can't) (read|see|extract)",
+            r"blank page",
+            r"not (possible|able) to",
+            r"sorry, but as an ai",
+        ]
+        low_text = text.lower()
+        return any(re.search(p, low_text) for p in refusal_patterns)
+
+    @staticmethod
+    def _compute_page_confidence(text: str) -> float:
         """Useful-char ratio: alphanumerics + punctuation / total chars."""
-        import re
-        if not text:
-            return 0.0
+        if not text: return 0.0
         useful = len(re.findall(r"[A-Za-z0-9.,;:!?'\"\-\(\)\[\]]", text))
-        return round(min(useful / len(text), 1.0), 4)
+        return min(useful / len(text), 1.0)
 
     # ------------------------------------------------------------------
     # Dependency check
