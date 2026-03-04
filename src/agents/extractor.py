@@ -119,6 +119,7 @@ class ExtractionRouter:
         self._thresholds: dict[str, float] = self._rules.get("thresholds", {})
         self._ladder: list[str] = self._rules["escalation"]["ladder"]
         self._max_escalations: int = self._rules["escalation"].get("max_escalations", 2)
+        self._vision_budget: dict[str, Any] = self._rules.get("vision_budget", {})
 
     # ------------------------------------------------------------------
     # Public API
@@ -155,6 +156,13 @@ class ExtractionRouter:
         escalation_count = 0
 
         for strategy_name in self._ladder[start_idx:]:
+            # Budget Check for Vision
+            if strategy_name == "vision" and self._is_over_budget(profile):
+                msg = f"Vision escalation skipped: document size ({profile.page_count} pages) exceeds budget cap."
+                logger.warning("[%s] %s", profile.document_id, msg)
+                all_warnings.append(msg)
+                break
+
             extractor = self._REGISTRY[strategy_name]()
             logger.info("[%s] Running %s …", profile.document_id, strategy_name)
 
@@ -239,6 +247,12 @@ class ExtractionRouter:
         ):
             return "fast_text"
         return "layout"
+
+    def _is_over_budget(self, profile: DocumentProfile) -> bool:
+        """Check if profile exceeds vision budget constraints defined in rubric."""
+        max_pages = self._vision_budget.get("max_pages_per_doc", 10)
+        actual_pages = profile.page_count or 1
+        return actual_pages > max_pages
 
     # ------------------------------------------------------------------
     # Helpers
