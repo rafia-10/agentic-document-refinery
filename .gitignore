@@ -1,0 +1,23 @@
+# Pytho
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# IDEs
+.vscode/
+.idea/
+
+# Refinery
+.refinery/
+reports/
+
+# Environment
+.env
