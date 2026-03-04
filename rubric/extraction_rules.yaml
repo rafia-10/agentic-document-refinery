@@ -1,0 +1,169 @@
+# ============================================================
+# Document Intelligence Refinery — Extraction Rubric
+# ============================================================
+#
+# This file is the single source of truth for all tuneable
+# parameters in the extraction pipeline.  Changes here take
+# effect without code edits.
+#
+# Sections
+# --------
+# thresholds   : minimum acceptable confidence per strategy
+# escalation   : rules for automatic strategy promotion
+# chunking     : token budget and overlap for LDU creation
+# cost_weights : per-page cost multipliers by origin × complexity
+
+# ----------------------------------------------------------
+# Confidence thresholds
+# A strategy result whose confidence falls below its floor
+# triggers escalation to the next tier.
+# ----------------------------------------------------------
+thresholds:
+  fast_text:  0.72   # below → try LayoutExtractor
+  layout:     0.60   # below → try VisionExtractor
+  vision:     0.40   # below → emit warning, return best available
+
+# ----------------------------------------------------------
+# Escalation ladder
+# Ordered list: strategies tried left-to-right on failure.
+# ----------------------------------------------------------
+escalation:
+  ladder:
+    - fast_text
+    - layout
+    - vision
+  max_escalations: 2          # never escalate more than twice
+
+# ----------------------------------------------------------
+# Chunking constitution
+# Controls how ExtractedDocument text is split into LDUs.
+# ----------------------------------------------------------
+chunking:
+  # Hard token ceiling per LDU (approximate, pre-tokenisation)
+  max_tokens: 512
+
+  # Overlap between adjacent LDUs to preserve context
+  overlap_tokens: 64
+
+  # Split preference order (first matching rule wins)
+  split_preference:
+    - heading        # split at detected headings first
+    - paragraph      # then at paragraph breaks (\n\n)
+    - sentence       # then at sentence boundaries
+    - token          # last resort: hard token cut
+
+  # Minimum useful chunk size; smaller chunks are merged upward
+  min_tokens: 32
+
+  # Respect page boundaries as hard split points
+  respect_page_boundaries: true
+
+  # When a table spans > this many tokens, emit it as its own LDU
+  table_ldu_token_threshold: 128
+
+# ----------------------------------------------------------
+# Cost weight table
+# estimated_cost = page_count × origin_weight × complexity_weight
+# Units are arbitrary normalised GPU-seconds per page.
+# ----------------------------------------------------------
+cost_weights:
+  origin:
+    digital_pdf:  1.0
+    scanned_pdf:  4.5   # OCR required
+    html:         0.8
+    docx:         1.2
+    markdown:     0.5
+    spreadsheet:  1.5
+    email:        0.7
+    unknown:      3.0   # conservative fallback
+
+  complexity:
+    simple:        1.0
+    moderate:      1.6
+    complex:       2.8
+    highly_complex: 4.2
+
+# ----------------------------------------------------------
+# Domain keyword classifier
+# Each domain maps to a list of trigger keywords (case-insensitive).
+# A document inherits a domain label if ANY keyword matches
+# in its first 4 KB of text.
+# ----------------------------------------------------------
+domain_keywords:
+  finance:
+    - revenue
+    - EBITDA
+    - balance sheet
+    - cash flow
+    - equity
+    - dividend
+    - fiscal year
+    - earnings per share
+    - amortization
+    - depreciation
+    - portfolio
+
+  legal:
+    - pursuant
+    - whereas
+    - plaintiff
+    - defendant
+    - indemnification
+    - jurisdiction
+    - arbitration
+    - liability
+    - tort
+    - covenant
+    - intellectual property
+    - force majeure
+
+  medical:
+    - diagnosis
+    - prognosis
+    - patient
+    - clinical trial
+    - pharmacokinetics
+    - contraindication
+    - adverse event
+    - dosage
+    - biomarker
+    - genomic
+    - pathology
+
+  engineering:
+    - schematic
+    - tolerance
+    - specification
+    - stress analysis
+    - test vector
+    - firmware
+    - API reference
+    - architecture diagram
+    - bandwidth
+    - throughput
+    - latency
+
+  academic:
+    - abstract
+    - methodology
+    - hypothesis
+    - peer review
+    - citation
+    - bibliography
+    - literature review
+    - statistical significance
+    - p-value
+    - null hypothesis
+    - conference proceedings
+
+  government:
+    - regulation
+    - statute
+    - amendment
+    - executive order
+    - federal register
+    - compliance
+    - public comment
+    - rulemaking
+    - memorandum
+    - appropriations
