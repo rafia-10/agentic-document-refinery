@@ -12,6 +12,7 @@
 # escalation   : rules for automatic strategy promotion
 # chunking     : token budget and overlap for LDU creation
 # cost_weights : per-page cost multipliers by origin × complexity
+# vision_budget : guardrails for expensive vision extraction
 
 # ----------------------------------------------------------
 # Confidence thresholds
@@ -167,3 +168,11 @@ domain_keywords:
     - rulemaking
     - memorandum
     - appropriations
+
+# ----------------------------------------------------------
+# Vision Budget Constraints
+# Prevents excessive API costs on large documents.
+# ----------------------------------------------------------
+vision_budget:
+  max_pages_per_doc: 10      # skip vision if doc exceeds this
+  cost_cap_normalised: 50.0  # soft cap for triage estimations
