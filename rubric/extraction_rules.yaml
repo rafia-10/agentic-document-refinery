@@ -174,5 +174,5 @@ domain_keywords:
 # Prevents excessive API costs on large documents.
 # ----------------------------------------------------------
 vision_budget:
-  max_pages_per_doc: 10      # skip vision if doc exceeds this
-  cost_cap_normalised: 50.0  # soft cap for triage estimations
+  max_pages_per_doc: 200      # increased for demo artifacts
+  cost_cap_normalised: 500.0  # soft cap for triage estimations
