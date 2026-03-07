@@ -18,50 +18,64 @@ from src.data.vector_store import VectorStoreManager
 logger = logging.getLogger(__name__)
 
 def get_query_tools():
-    """Returns a list of tools for the QueryAgent."""
+    """Returns a list of tools for the QueryAgent, with explicit topic-based navigation and smarter routing."""
     data_dir = Path(".refinery/")
     fact_table = FactTableManager(data_dir / "fact_table.db")
     vector_store = VectorStoreManager(data_dir / "vector_store/")
     pageindex_dir = data_dir / "pageindex/"
 
     @tool
-    def pageindex_navigate(document_id: str) -> str:
+    def pageindex_navigate(document_id: str, topic: str = None) -> str:
         """
         Browse the hierarchical section tree of a specific document.
-        Returns the titles, levels, and summaries of all sections.
+        Optionally filter by topic or section title for explicit traversal.
+        Returns the titles, levels, summaries, and optionally content for matching sections.
         """
         path = pageindex_dir / f"{document_id}.json"
         if not path.exists():
             return f"PageIndex for {document_id} not found."
-            
+
         with open(path, "r") as f:
             index_data = json.load(f)
             sections = index_data.get("sections", [])
-            
+
         output = [f"PageIndex for {document_id}:"]
+        matched = []
         for sec in sections:
+            if topic:
+                if topic.lower() in sec["title"].lower() or (sec.get("summary") and topic.lower() in sec["summary"].lower()):
+                    matched.append(sec)
+            else:
+                matched.append(sec)
+        if not matched:
+            return f"No sections found matching topic '{topic}'."
+        for sec in matched:
             output.append(f"- [{sec['level']}] {sec['title']} (Pages {sec['page_references']}): {sec.get('summary', 'No summary.')}")
         return "\n".join(output)
 
     @tool
-    def semantic_search(query: str, k: int = 5) -> str:
+    def semantic_search(query: str, document_id: str = None, section_title: str = None, k: int = 5) -> str:
         """
-        Search the entire document corpus using semantic vector search.
+        Search the document corpus using semantic vector search.
+        Optionally restrict to a document or section for deterministic topic-based retrieval.
         Returns the most relevant LDUs with their full metadata for citation.
         """
         results = vector_store.search(query, k=k)
+        if document_id:
+            results = [r for r in results if r["document_id"] == document_id]
+        if section_title:
+            results = [r for r in results if section_title.lower() in r.get("section_title", "").lower()]
         if not results:
             return "No relevant results found."
-            
         output = ["Semantic Search Results:"]
         for res in results:
-            # Include more metadata for the LLM to use in ProvenanceChain
             meta = {
                 "ldu_id": res["ldu_id"],
                 "document_id": res["document_id"],
                 "page_references": res["page_references"],
                 "content_hash": res["content_hash"],
-                "bounding_box": res.get("bounding_box")
+                "bounding_box": res.get("bounding_box"),
+                "section_title": res.get("section_title")
             }
             output.append(
                 f"SOURCE_METADATA: {json.dumps(meta)}\n"
@@ -70,13 +84,17 @@ def get_query_tools():
         return "\n".join(output)
 
     @tool
-    def structured_query(sql_query: str) -> str:
+    def structured_query(sql_query: str, document_id: str = None, section_id: str = None) -> str:
         """
         Query the SQLite FactTable for numerical or tabular data.
-        Use this for specific lookups like 'revenue in 2023' or 'EBITDA margins'.
+        Optionally restrict to a document or section for deterministic retrieval.
         The 'facts' table has: [document_id, page_number, fact_type, entity, value, unit, context, source_ldu_id].
         The 'tables' table has: [table_id, document_id, headers, data].
         """
+        if document_id:
+            sql_query = sql_query.strip()
+            if sql_query.lower().startswith("select") and "where" not in sql_query.lower():
+                sql_query += f" WHERE document_id = '{document_id}'"
         results = fact_table.query_facts(sql_query)
         if not results:
             return "No records found matching the query."
