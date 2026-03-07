@@ -33,6 +33,7 @@ import os
 import re
 from pathlib import Path
 
+from src.utils.llm import get_chat_model
 from src.models.schemas import BoundingBox, DocumentProfile, ExtractedDocument
 from src.strategies.base import BaseExtractor, ExtractionResult
 
@@ -100,13 +101,25 @@ class VisionExtractor(BaseExtractor):
         path = Path(file_path)
         page_images = self._rasterise(path, profile)
 
-        client = self._make_client(api_key)
+        client = get_chat_model(purpose="vision")
         page_texts: list[str] = []
         warnings: list[str] = []
 
         for page_no, img_b64 in enumerate(page_images, start=1):
             try:
-                text = self._call_vision_api(client, img_b64)
+                # Use LangChain's vision support via get_chat_model
+                from langchain_core.messages import HumanMessage
+                message = HumanMessage(
+                    content=[
+                        {"type": "text", "text": _EXTRACTION_PROMPT},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/png;base64,{img_b64}"},
+                        },
+                    ]
+                )
+                response = client.invoke([message])
+                text = response.content
                 page_texts.append(text)
             except Exception as exc:
                 msg = f"Page {page_no}: vision API call failed — {exc}"
@@ -201,7 +214,7 @@ class VisionExtractor(BaseExtractor):
                     ],
                 }
             ],
-            max_tokens=4096,
+            max_tokens=1024,
             temperature=0,
         )
         return response.choices[0].message.content or ""
