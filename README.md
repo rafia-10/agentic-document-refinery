@@ -124,7 +124,8 @@ source .venv/bin/activate
 pytest tests/ -v --tb=short
 ```
 
-Expected output: **34 tests passed**.
+Expected output: **40+ tests passed** (now including persistence/sanity checks for the
+storage backends).
 
 Coverage report:
 
@@ -159,6 +160,56 @@ Pre-generated fixtures live in `.refinery/`:
 |---|---|
 | `.refinery/profiles/*.json` | 12 `DocumentProfile` snapshots (3× digital_pdf, scanned_pdf, html, docx) |
 | `.refinery/extraction_ledger.jsonl` | 12 ledger entries with strategy chains, confidence scores, and warnings |
+
+---
+
+## Storage Backends (Persistence)
+
+Two concrete storage layers ensure that extracted information survives process restarts and
+can be audited independently of the in-memory pipeline.
+
+* **SQLite FactTable** — managed by `src.data.fact_table.FactTableManager` and located at
+     `.refinery/fact_table.db` by default.  It exposes two tables:
+
+     ```sql
+     -- raw numerical facts extracted from tables or text
+     CREATE TABLE facts (
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               document_id TEXT,
+               page_number INTEGER,
+               fact_type TEXT,
+               entity TEXT,
+               value REAL,
+               unit TEXT,
+               context TEXT,
+               source_ldu_id TEXT
+     );
+
+     -- original table structures stored as JSON
+     CREATE TABLE tables (
+               table_id TEXT PRIMARY KEY,
+               document_id TEXT,
+               headers TEXT, -- JSON array
+               data TEXT     -- JSON array of arrays
+     );
+     ```
+
+     The manager provides `ingest_document_facts` for bulk loading and `query_facts`/
+     `get_numerical_facts` helpers for arbitrary SQL queries.  Unit tests (`tests/test_fact_table.py`)
+     verify both insertion and persistence across multiple `FactTableManager` instances.
+
+* **FAISS Vector Store** — managed by `src.data.vector_store.VectorStoreManager`
+     and persisted under `.refinery/vector_store/` as `index.faiss` + metadata pickle files.
+     Embeddings are computed via `src.utils.llm.get_embeddings_model()` (defaults to
+     `HuggingFaceEmbeddings` with a local MiniLM model; falls back to a deterministic
+     mock).  The manager automatically reloads an existing index on construction and
+     saves after every ingestion.  Corresponding tests in `tests/test_vector_store.py`
+     exercise ingestion, search, persistence, and edge cases.
+
+These concrete backends are intentionally simple to make inspection and debugging
+straightforward; they are the “opaque” components called out in early reviews and now
+come with explicit code, documentation and test coverage to enable production-grade
+verification.
 
 ---
 

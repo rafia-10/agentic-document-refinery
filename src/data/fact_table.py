@@ -62,10 +62,42 @@ class FactTableManager:
                     (table.table_id, doc.document_id, json.dumps(table.headers), json.dumps(table.rows))
                 )
                 
-                # Optionally decompose table rows into individual facts
-                # Simplified for this implementation
+                # Decompose table rows into individual facts
+                self._extract_facts_from_table(cursor, table, doc.document_id)
                 
             conn.commit()
+
+    def clear(self) -> None:
+        """Wipes all rows from both `facts` and `tables`.
+
+        Useful for tests or resetting the database without dropping the file.
+        """
+        with sqlite3.connect(self._db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM facts")
+            cursor.execute("DELETE FROM tables")
+            conn.commit()
+
+    def drop(self) -> None:
+        """Deletes the underlying database file entirely.
+
+        Use with caution; subsequent operations will recreate an empty database.
+        """
+        try:
+            self._db_path.unlink()
+        except FileNotFoundError:
+            pass
+
+    def _extract_facts_from_table(self, cursor, table: TableData, document_id: str):
+        """Extract numerical facts from a table."""
+        for row_idx, row in enumerate(table.rows):
+            for col_idx, cell in enumerate(row):
+                if isinstance(cell, (int, float)) and isinstance(cell, (int, float)):  # Numerical value
+                    header = table.headers[col_idx] if col_idx < len(table.headers) else f"col_{col_idx}"
+                    cursor.execute(
+                        "INSERT INTO facts (document_id, page_number, fact_type, entity, value, context, source_ldu_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (document_id, table.page_references[0] if table.page_references else 1, "numerical", header, float(cell), f"Table {table.table_id} row {row_idx}", table.table_id)
+                    )
 
     def query_facts(self, sql_query: str) -> list[tuple]:
         """Runs a raw SQL query against the fact table."""
@@ -77,3 +109,29 @@ class FactTableManager:
         except Exception as e:
             logger.error("SQL query failed: %s", e)
             return []
+
+    def get_numerical_facts(self, document_id: str = None, limit: int = 100) -> list[dict]:
+        """Retrieve numerical facts, optionally filtered by document."""
+        query = "SELECT * FROM facts WHERE fact_type = 'numerical'"
+        params = []
+        if document_id:
+            query += " AND document_id = ?"
+            params.append(document_id)
+        query += f" LIMIT {limit}"
+        
+        rows = self.query_facts(query)
+        facts = []
+        for row in rows:
+            fact = {
+                "id": row[0],
+                "document_id": row[1],
+                "page_number": row[2],
+                "fact_type": row[3],
+                "entity": row[4],
+                "value": row[5],
+                "unit": row[6],
+                "context": row[7],
+                "source_ldu_id": row[8]
+            }
+            facts.append(fact)
+        return facts

@@ -78,6 +78,22 @@ class VectorStoreManager:
         self._vector_db.save_local(str(self._index_path))
         logger.info("Saved FAISS index to %s", self._index_path)
 
+    def clear(self) -> None:
+        """Remove all entries from the vector store and delete persisted files.
+
+        The next ingestion will recreate an empty index.  This is useful for
+        testing or when rebuilding the index from scratch.
+        """
+        # delete persisted index files
+        for fname in ["index.faiss", "index.pkl", "index.json"]:
+            path = self._index_path / fname
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+        # reset in-memory store
+        self._init_new_db()
+
     def search(self, query: str, k: int = 4) -> list[dict]:
         """Performs semantic search."""
         if not self._vector_db:

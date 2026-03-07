@@ -38,5 +38,8 @@ src/strategies/base.py
 src/strategies/fast_text.py
 src/strategies/layout.py
 src/strategies/vision.py
+src/utils/llm.py
 tests/test_extractor.py
+tests/test_fact_table.py
 tests/test_triage.py
+tests/test_vector_store.py
