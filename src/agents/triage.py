@@ -18,6 +18,7 @@ from typing import Any, Protocol
 
 import chardet
 import yaml
+from pypdf import PdfReader
 
 from src.models.schemas import (
     DocumentProfile,
@@ -54,7 +55,7 @@ class KeywordDomainClassifier:
 # ---------------------------------------------------------------------------
 
 _EXT_ORIGIN: dict[str, OriginType] = {
-    ".pdf": OriginType.DIGITAL_PDF,
+    ".pdf": OriginType.NATIVE_DIGITAL,
     ".html": OriginType.HTML,
     ".htm": OriginType.HTML,
     ".md": OriginType.MARKDOWN,
@@ -70,7 +71,7 @@ _EXT_ORIGIN: dict[str, OriginType] = {
 }
 
 _MIME_ORIGIN: dict[str, OriginType] = {
-    "application/pdf": OriginType.DIGITAL_PDF,
+    "application/pdf": OriginType.NATIVE_DIGITAL,
     "text/html": OriginType.HTML,
     "text/markdown": OriginType.MARKDOWN,
     "text/plain": OriginType.MARKDOWN,
@@ -115,7 +116,7 @@ class TriageAgent:
         layout_complexity = self._score_layout_complexity(origin_type, sample_text)
         domain_hints = self._run_classification(sample_text)
         page_count = self._estimate_page_count(origin_type, raw_bytes)
-        ocr_required = origin_type == OriginType.SCANNED_PDF
+        ocr_required = origin_type == OriginType.SCANNED_IMAGE
         cost = self._estimate_cost(origin_type, layout_complexity, page_count)
 
         return DocumentProfile(
@@ -144,14 +145,32 @@ class TriageAgent:
 
     def _detect_origin_type(self, path: Path, raw_bytes: bytes) -> OriginType:
         mime = self._magic_mime(raw_bytes)
-        if mime:
-            origin = _MIME_ORIGIN.get(mime)
-            if origin:
-                if origin == OriginType.DIGITAL_PDF and self._is_image_pdf(raw_bytes):
-                    return OriginType.SCANNED_PDF
-                return origin
         ext = path.suffix.lower()
-        return _EXT_ORIGIN.get(ext, OriginType.UNKNOWN)
+        # Terminology alignment
+        origin = OriginType.UNKNOWN
+        if mime == "application/pdf":
+            # PDF analysis for digital vs scanned vs mixed
+            is_scanned, has_digital, digital_ratio = self._analyze_pdf_content(path)
+            if has_digital and is_scanned:
+                origin = OriginType.MIXED
+            elif has_digital:
+                origin = OriginType.NATIVE_DIGITAL
+            else:
+                origin = OriginType.SCANNED_IMAGE
+        elif mime == "text/html" or ext == ".html" or ext == ".htm":
+            origin = OriginType.HTML
+        elif "wordprocessingml" in (mime or "") or "msword" in (mime or "") or ext == ".docx" or ext == ".doc":
+            origin = OriginType.DOCX
+        elif mime == "text/markdown" or ext == ".md" or ext == ".markdown":
+            origin = OriginType.MARKDOWN
+        elif "spreadsheet" in (mime or "") or ext in [".csv", ".xlsx", ".xls"]:
+            origin = OriginType.SPREADSHEET
+        elif "message/rfc822" in (mime or "") or ext == ".eml" or ext == ".msg":
+            origin = OriginType.EMAIL
+        elif mime == "text/plain" or ext == ".txt":
+            origin = OriginType.MARKDOWN # Treat plain text as markdown for now
+        
+        return origin
 
     @staticmethod
     def _magic_mime(raw_bytes: bytes) -> str | None:
@@ -160,19 +179,50 @@ class TriageAgent:
             return magic.from_buffer(raw_bytes[:4096], mime=True)
         except ImportError:
             return None
+        except Exception as e:
+            logger.warning(f"magic failed: {e}")
+            return None
 
-    @staticmethod
-    def _is_image_pdf(raw_bytes: bytes) -> bool:
+    def _analyze_pdf_content(self, path: Path) -> tuple[bool, bool, float]:
+        """
+        Deeper inspection of PDF to detect digital vs scanned vs mixed.
+        Returns (has_scanned_pages, has_digital_pages, digital_page_ratio).
+        """
         try:
-            text_markers = len(re.findall(rb"BT\s", raw_bytes))
-            page_markers = len(re.findall(rb"/Page\b", raw_bytes))
-            image_markers = len(re.findall(rb"/XObject\s*<</Subtype\s*/Image", raw_bytes))
-            if page_markers == 0: return False
-            text_density = text_markers / page_markers
-            image_density = image_markers / page_markers
-            return text_density < 1.0 or (image_density > 2.0 and text_density < 5.0)
-        except Exception:
-            return False
+            reader = PdfReader(path)
+            total_pages = len(reader.pages)
+            if total_pages == 0:
+                return False, False, 0.0
+            
+            digital_pages = 0
+            for page in reader.pages:
+                text = page.extract_text() or ""
+                if len(text.strip()) > 50: # Threshold for 'digital' content
+                    digital_pages += 1
+            
+            has_digital = digital_pages > 0
+            is_scanned = digital_pages < total_pages
+            
+            return is_scanned, has_digital, (digital_pages / total_pages)
+        except Exception as e:
+            logger.warning(f"pypdf analysis failed for {path.name}: {e}. Falling back to heuristic.")
+            try:
+                raw_bytes = path.read_bytes()
+                text_markers = len(re.findall(rb"BT\s", raw_bytes))
+                page_markers = len(re.findall(rb"/Page\b", raw_bytes)) or 1
+                image_markers = len(re.findall(rb"/XObject\s*<</Subtype\s*/Image", raw_bytes))
+                
+                text_density = text_markers / page_markers
+                image_density = image_markers / page_markers
+                
+                # Heuristic mapping to (is_scanned, has_digital, digital_ratio)
+                has_digital = text_density > 0.1
+                is_scanned = text_density < 5.0 or image_density > 0.5
+                digital_ratio = min(text_density / 10.0, 1.0)
+                
+                return is_scanned, has_digital, digital_ratio
+            except Exception:
+                return False, False, 0.0
 
     @staticmethod
     def _extract_text_sample(raw_bytes: bytes, max_bytes: int = 8192) -> str:
@@ -196,7 +246,7 @@ class TriageAgent:
 
     def _score_layout_complexity(self, origin_type: OriginType, text: str) -> LayoutComplexity:
         score = 0
-        _base = {OriginType.SCANNED_PDF: 3, OriginType.DIGITAL_PDF: 2, OriginType.DOCX: 1, 
+        _base = {OriginType.SCANNED_IMAGE: 3, OriginType.NATIVE_DIGITAL: 2, OriginType.DOCX: 1, 
                  OriginType.SPREADSHEET: 3, OriginType.HTML: 1, OriginType.MARKDOWN: 0, 
                  OriginType.EMAIL: 0, OriginType.UNKNOWN: 2}
         score += _base.get(origin_type, 1)
@@ -221,7 +271,7 @@ class TriageAgent:
 
     @staticmethod
     def _estimate_page_count(origin_type: OriginType, raw_bytes: bytes) -> int | None:
-        if origin_type in (OriginType.DIGITAL_PDF, OriginType.SCANNED_PDF):
+        if origin_type in (OriginType.NATIVE_DIGITAL, OriginType.SCANNED_IMAGE, OriginType.MIXED):
             count = len(re.findall(rb"/Type\s*/Page\b", raw_bytes))
             return max(1, count) if count > 0 else None
         if origin_type == OriginType.DOCX:

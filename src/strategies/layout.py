@@ -131,7 +131,7 @@ class LayoutExtractor(BaseExtractor):
         page_count = max(len(page_texts), profile.page_count or 1)
         confidence = self._compute_confidence(bounding_boxes, page_count)
 
-        if profile.origin_type == OriginType.SCANNED_PDF:
+        if profile.origin_type == OriginType.SCANNED_IMAGE:
             warnings.append(
                 "LayoutExtractor: scanned PDF detected — docling will run its "
                 "internal OCR (if enabled); consider VisionExtractor for higher accuracy."

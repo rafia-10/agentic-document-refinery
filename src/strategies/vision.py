@@ -89,7 +89,7 @@ class VisionExtractor(BaseExtractor):
 
         api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         if not api_key:
-            raise RuntimeError(
+            raise NotImplementedError(
                 "VisionExtractor requires OPENROUTER_API_KEY to be set.\n"
                 "Export it with: export OPENROUTER_API_KEY=sk-or-...\n"
                 "Or set REFINERY_VISION_STUB=1 to suppress this error."

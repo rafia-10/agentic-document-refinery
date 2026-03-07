@@ -38,7 +38,7 @@ def router() -> ExtractionRouter:
 
 
 def _make_profile(
-    origin: OriginType = OriginType.DIGITAL_PDF,
+    origin: OriginType = OriginType.NATIVE_DIGITAL,
     complexity: LayoutComplexity = LayoutComplexity.SIMPLE,
     page_count: int = 5,
 ) -> DocumentProfile:
@@ -85,7 +85,7 @@ def _tmp_file(suffix: str = ".pdf", content: bytes = b"x") -> Path:
 class TestStrategySelection:
 
     def test_digital_pdf_starts_at_fast_text(self, router: ExtractionRouter) -> None:
-        profile = _make_profile(origin=OriginType.DIGITAL_PDF)
+        profile = _make_profile(origin=OriginType.NATIVE_DIGITAL)
         assert router._select_initial_strategy(profile) == "fast_text"
 
     def test_html_starts_at_fast_text(self, router: ExtractionRouter) -> None:
@@ -97,7 +97,7 @@ class TestStrategySelection:
         assert router._select_initial_strategy(profile) == "fast_text"
 
     def test_scanned_pdf_starts_at_vision(self, router: ExtractionRouter) -> None:
-        profile = _make_profile(origin=OriginType.SCANNED_PDF)
+        profile = _make_profile(origin=OriginType.SCANNED_IMAGE)
         assert router._select_initial_strategy(profile) == "vision"
 
     def test_spreadsheet_starts_at_layout(self, router: ExtractionRouter) -> None:
@@ -207,7 +207,7 @@ class TestVisionExtractorGracefulHandling:
 
     def test_vision_stub_mode_does_not_crash(self, router: ExtractionRouter) -> None:
         """REFINERY_VISION_STUB=1 → router returns a result, no exception."""
-        profile = _make_profile(origin=OriginType.SCANNED_PDF)
+        profile = _make_profile(origin=OriginType.SCANNED_IMAGE)
         tmp = _tmp_file()
 
         with patch.dict(os.environ, {"REFINERY_VISION_STUB": "1"}):
@@ -220,7 +220,7 @@ class TestVisionExtractorGracefulHandling:
 
     def test_vision_not_implemented_without_stub(self, router: ExtractionRouter) -> None:
         """Without REFINERY_VISION_STUB, VisionExtractor raises but router catches it."""
-        profile = _make_profile(origin=OriginType.SCANNED_PDF)
+        profile = _make_profile(origin=OriginType.SCANNED_IMAGE)
         tmp = _tmp_file()
 
         env = {k: v for k, v in os.environ.items() if k != "REFINERY_VISION_STUB"}

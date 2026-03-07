@@ -69,8 +69,8 @@ chunking:
 # ----------------------------------------------------------
 cost_weights:
   origin:
-    digital_pdf:  1.0
-    scanned_pdf:  4.5   # OCR required
+    native_digital:  1.0
+    scanned_image:  4.5   # OCR required
     html:         0.8
     docx:         1.2
     markdown:     0.5

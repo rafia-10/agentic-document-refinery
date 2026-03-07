@@ -236,10 +236,10 @@ class ExtractionRouter:
 
     def _select_initial_strategy(self, profile: DocumentProfile) -> str:
         """Choose the starting strategy from the ladder based on the profile."""
-        if profile.origin_type == OriginType.SCANNED_PDF:
+        if profile.origin_type in (OriginType.SCANNED_IMAGE, OriginType.MIXED):
             return "vision"
         if profile.origin_type in (
-            OriginType.DIGITAL_PDF,
+            OriginType.NATIVE_DIGITAL,
             OriginType.DOCX,
             OriginType.MARKDOWN,
             OriginType.HTML,

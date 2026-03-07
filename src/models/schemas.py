@@ -31,8 +31,9 @@ from pydantic import BaseModel, Field, model_validator
 class OriginType(str, Enum):
     """Where the document came from / how it was produced."""
 
-    SCANNED_PDF = "scanned_pdf"          # Image-based scan, needs OCR
-    DIGITAL_PDF = "digital_pdf"          # Born-digital, selectable text
+    NATIVE_DIGITAL = "native_digital"     # Born-digital, selectable text
+    SCANNED_IMAGE = "scanned_image"       # Image-based scan, needs OCR
+    MIXED = "mixed"                      # Combination of digital and scanned
     HTML = "html"                        # Web page or HTML export
     DOCX = "docx"                        # Microsoft Word document
     MARKDOWN = "markdown"                # Plain Markdown

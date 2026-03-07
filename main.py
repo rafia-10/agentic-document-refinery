@@ -67,7 +67,7 @@ def run_extract(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Document Intelligence Refinery CLI")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest="command", required=False)
     
     # Triage command
     t_parser = subparsers.add_parser("triage", help="Analyze document and produce a profile")
@@ -79,6 +79,12 @@ def main() -> None:
     e_parser.add_argument("--output-dir", default=".refinery/output", help="Directory for output artifacts")
     
     args = parser.parse_args()
+    
+    # Default behavior if no command is provided
+    if not args.command:
+        logging.info("No command provided. Running demo: triage README.md")
+        args.command = "triage"
+        args.file = "README.md"
     
     try:
         if args.command == "triage":

@@ -80,7 +80,7 @@ class FastTextExtractor(BaseExtractor):
         raw_bytes = path.read_bytes()
         warnings: list[str] = []
 
-        if profile.origin_type in (OriginType.DIGITAL_PDF,):
+        if profile.origin_type in (OriginType.NATIVE_DIGITAL,):
             pages, page_texts, warns = self._extract_pdf(raw_bytes)
             warnings.extend(warns)
         elif profile.origin_type == OriginType.HTML:
@@ -102,7 +102,7 @@ class FastTextExtractor(BaseExtractor):
         # Enhanced confidence
         confidence = self._compute_enhanced_confidence(full_text)
 
-        if profile.origin_type == OriginType.SCANNED_PDF:
+        if profile.origin_type == OriginType.SCANNED_IMAGE:
             warnings.append(
                 "FastTextExtractor: scanned PDF detected — confidence capped; "
                 "escalating to Vision is recommended."

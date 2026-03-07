@@ -89,7 +89,7 @@ class TestOriginTypeDetection:
         """A file with .pdf extension containing BT operators → DIGITAL_PDF."""
         tmp = _tmp_file(".pdf", _MINIMAL_PDF_BYTES)
         profile = agent.profile(tmp)
-        assert profile.origin_type in (OriginType.DIGITAL_PDF, OriginType.SCANNED_PDF)
+        assert profile.origin_type in (OriginType.NATIVE_DIGITAL, OriginType.SCANNED_IMAGE)
         tmp.unlink()
 
     def test_html_from_extension(self, agent: TriageAgent) -> None:
