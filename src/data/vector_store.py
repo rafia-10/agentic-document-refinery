@@ -95,16 +95,22 @@ class VectorStoreManager:
         self._init_new_db()
 
     def search(self, query: str, k: int = 4) -> list[dict]:
-        """Performs semantic search."""
+        """Performs semantic search. Handles index dimension mismatch gracefully."""
         if not self._vector_db:
+            self._init_new_db()
+        try:
+            results = self._vector_db.similarity_search_with_score(query, k=k)
+        except AssertionError:
+            # Dimension mismatch, reinitialize index and return empty
+            logger.warning("FAISS index dimension mismatch. Reinitializing index.")
+            self._init_new_db()
             return []
-            
-        results = self._vector_db.similarity_search_with_score(query, k=k)
-        
+        except Exception as e:
+            logger.error(f"Vector search failed: {e}")
+            return []
         output = []
         for doc, score in results:
             res = doc.metadata
             res["relevance_score"] = float(score)
             output.append(res)
-            
         return output
